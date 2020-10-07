@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
@@ -11,18 +12,15 @@ import (
 )
 
 type (
-	Pet struct {
-		Type string `json:"type"`
-		Name string `json:"name"`
-	}
-
 	Person struct {
-		Name string `json:"name"`
-		Pets []Pet  `json:"pets"`
+		Name string `json:"name" validate:"required"`
+		Email string `json:"email" validate:"required,email"`
 	}
 
 	PingHandler struct{}
 )
+
+var validate = validator.New()
 
 const jsonBodyKey = "JSONBody"
 
@@ -36,6 +34,11 @@ func ExtractJSONBody(body interface{}) func(http.Handler) http.Handler {
 			err := json.NewDecoder(r.Body).Decode(instance)
 			if err != nil {
 				log.Print(err)
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				return
+			}
+
+			if err := validate.Struct(instance); err != nil {
 				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 				return
 			}

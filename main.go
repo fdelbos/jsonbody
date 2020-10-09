@@ -3,42 +3,51 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"github.com/davecgh/go-spew/spew"
-	"github.com/go-playground/validator/v10"
-	"github.com/gorilla/mux"
 	"log"
 	"net/http"
 	"reflect"
+
+	"github.com/go-playground/validator/v10"
+	"github.com/gorilla/mux"
 )
 
 type (
 	Person struct {
-		Name string `json:"name" validate:"required"`
+		Name  string `json:"name" validate:"required"`
 		Email string `json:"email" validate:"required,email"`
 	}
 
 	PingHandler struct{}
+
+	contextKey int
 )
 
 var validate = validator.New()
 
-const jsonBodyKey = "JSONBody"
+const jsonBodyKey contextKey = iota
 
-func ExtractJSONBody(body interface{}) func(http.Handler) http.Handler {
+func JSONBody(body interface{}) func(http.Handler) http.Handler {
 	bodyType := reflect.TypeOf(body)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			instance := reflect.New(bodyType).Interface()
 
+			switch r.Header.Get("Content-Type") {
+			case "application/json", "application/json; charset=utf-8":
+			default:
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				return
+			}
+
+			instance := reflect.New(bodyType).Interface()
 			err := json.NewDecoder(r.Body).Decode(instance)
 			if err != nil {
-				log.Print(err)
 				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 				return
 			}
 
 			if err := validate.Struct(instance); err != nil {
+				// should display a formatted error instead...
 				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 				return
 			}
@@ -61,16 +70,14 @@ func WriteJSONBody(w http.ResponseWriter, body interface{}) {
 	}
 }
 
-func (PingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (p PingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body := GetJSONBody(r).(*Person)
-	// do something with it...
-
-	log.Print(spew.Sdump(body))
+	WriteJSONBody(w, body)
 }
 
 func Router() *mux.Router {
 	r := mux.NewRouter()
-	r.Handle("/", ExtractJSONBody(Person{})(PingHandler{})).Methods("POST")
+	r.Handle("/", JSONBody(Person{})(PingHandler{})).Methods(http.MethodPost)
 	return r
 }
 
